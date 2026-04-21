@@ -1,0 +1,176 @@
+# Alert Rules for DevOps Monitoring Stack
+# Person 5 - Monitoring System
+# Last Updated: 2026-04-21
+
+groups:
+  # CPU and Memory Alerts
+  - name: system_alerts
+    interval: 30s
+    rules:
+      # Alert 1: High CPU Usage
+      - alert: HighCPUUsage
+        expr: |
+          (100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)) > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: cpu
+        annotations:
+          summary: "High CPU usage detected on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}% on instance {{ $labels.instance }} (threshold: 80%)"
+          runbook: "https://wiki.example.com/runbooks/high_cpu"
+
+      # Alert 2: Critical CPU Usage
+      - alert: CriticalCPUUsage
+        expr: |
+          (100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)) > 95
+        for: 2m
+        labels:
+          severity: critical
+          component: cpu
+        annotations:
+          summary: "CRITICAL: CPU usage is dangerously high on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}% on instance {{ $labels.instance }} (threshold: 95%)"
+          runbook: "https://wiki.example.com/runbooks/critical_cpu"
+
+      # Alert 3: Low Available Memory
+      - alert: LowMemoryAvailable
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: memory
+        annotations:
+          summary: "Low available memory on {{ $labels.instance }}"
+          description: "Available memory is only {{ $value }}% on instance {{ $labels.instance }} (threshold: 80%)"
+          runbook: "https://wiki.example.com/runbooks/low_memory"
+
+      # Alert 4: Critical Memory Usage
+      - alert: CriticalMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          component: memory
+        annotations:
+          summary: "CRITICAL: Memory usage is critically high on {{ $labels.instance }}"
+          description: "Available memory is only {{ $value }}% on instance {{ $labels.instance }} (threshold: 95%)"
+          runbook: "https://wiki.example.com/runbooks/critical_memory"
+
+  # Disk Alerts
+  - name: disk_alerts
+    interval: 30s
+    rules:
+      # Alert 5: Disk Space Running Low
+      - alert: LowDiskSpace
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"} / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"}) < 0.2
+        for: 5m
+        labels:
+          severity: warning
+          component: disk
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }} ({{ $labels.device }})"
+          description: "Available disk space is {{ $value | humanizePercentage }} on {{ $labels.device }} (threshold: 20%)"
+          runbook: "https://wiki.example.com/runbooks/low_disk"
+
+      # Alert 6: Disk Space Critical
+      - alert: CriticalDiskSpace
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"} / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"}) < 0.05
+        for: 2m
+        labels:
+          severity: critical
+          component: disk
+        annotations:
+          summary: "CRITICAL: Disk space is critically low on {{ $labels.instance }}"
+          description: "Available disk space is {{ $value | humanizePercentage }} on {{ $labels.device }} (threshold: 5%)"
+          runbook: "https://wiki.example.com/runbooks/critical_disk"
+
+  # Application Performance Alerts
+  - name: application_alerts
+    interval: 30s
+    rules:
+      # Alert 7: High Request Latency (p95)
+      - alert: HighRequestLatency
+        expr: |
+          histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "High request latency (p95) on {{ $labels.instance }}"
+          description: "Request latency (p95) is {{ $value }}s on {{ $labels.instance }} (threshold: 200ms)"
+          runbook: "https://wiki.example.com/runbooks/high_latency"
+
+      # Alert 8: Critical Request Latency (p95)
+      - alert: CriticalRequestLatency
+        expr: |
+          histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 2m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "CRITICAL: Request latency is critically high on {{ $labels.instance }}"
+          description: "Request latency (p95) is {{ $value }}s on {{ $labels.instance }} (threshold: 1000ms)"
+          runbook: "https://wiki.example.com/runbooks/critical_latency"
+
+      # Alert 9: High Error Rate
+      - alert: HighErrorRate
+        expr: |
+          (sum(rate(http_requests_total{status=~"5.."}[5m])) by (instance) / sum(rate(http_requests_total[5m])) by (instance)) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "High error rate on {{ $labels.instance }}"
+          description: "Error rate is {{ $value }}% on {{ $labels.instance }} (threshold: 5%)"
+          runbook: "https://wiki.example.com/runbooks/high_error_rate"
+
+      # Alert 10: Critical Error Rate
+      - alert: CriticalErrorRate
+        expr: |
+          (sum(rate(http_requests_total{status=~"5.."}[5m])) by (instance) / sum(rate(http_requests_total[5m])) by (instance)) * 100 > 10
+        for: 2m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "CRITICAL: Error rate is critically high on {{ $labels.instance }}"
+          description: "Error rate is {{ $value }}% on {{ $labels.instance }} (threshold: 10%)"
+          runbook: "https://wiki.example.com/runbooks/critical_error_rate"
+
+  # Service Availability Alerts
+  - name: availability_alerts
+    interval: 30s
+    rules:
+      # Alert 11: Service Down
+      - alert: ServiceDown
+        expr: |
+          up{job=~"app|node_exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: availability
+        annotations:
+          summary: "Service {{ $labels.job }} is down on {{ $labels.instance }}"
+          description: "Service {{ $labels.job }} has been unavailable for more than 2 minutes"
+          runbook: "https://wiki.example.com/runbooks/service_down"
+
+      # Alert 12: Scrape Failures
+      - alert: ScrapeFailed
+        expr: |
+          up == 0
+        for: 1m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: "Scrape failed for {{ $labels.job }} on {{ $labels.instance }}"
+          description: "Prometheus scrape failed for {{ $labels.job }} on {{ $labels.instance }}"
+          runbook: "https://wiki.example.com/runbooks/scrape_failed"

@@ -1,0 +1,450 @@
+---
+# Monitoring Setup Playbook for DevOps Stack
+# Person 5 - Monitoring System
+# Purpose: Install and configure Prometheus and Alertmanager
+# Last Updated: 2026-04-21
+
+- name: Setup Monitoring Stack (Prometheus & Alertmanager)
+  hosts: monitoring_nodes
+  become: yes
+  gather_facts: yes
+  
+  # Variables specific to monitoring
+  vars:
+    app_node_ip: "10.0.1.4"
+    app_port: 3000
+    node_exporter_port: 9100
+    prometheus_port: 9090
+    alertmanager_port: 9093
+    
+    docker_compose_dir: "/opt/monitoring"
+    prometheus_config_dir: "/opt/monitoring/prometheus"
+    alertmanager_config_dir: "/opt/monitoring/alertmanager"
+    
+    prometheus_image: "prom/prometheus:latest"
+    alertmanager_image: "prom/alertmanager:latest"
+  
+  pre_tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+
+    - name: Create monitoring directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+      loop:
+        - "{{ docker_compose_dir }}"
+        - "{{ prometheus_config_dir }}"
+        - "{{ alertmanager_config_dir }}"
+
+    - name: Print monitoring setup information
+      debug:
+        msg:
+          - "=== Monitoring Stack Setup ==="
+          - "Application Node IP: {{ app_node_ip }}"
+          - "App Port: {{ app_port }}"
+          - "Node Exporter Port: {{ node_exporter_port }}"
+          - "Prometheus Port: {{ prometheus_port }}"
+          - "Alertmanager Port: {{ alertmanager_port }}"
+          - "================================"
+
+  tasks:
+    # Task 1: Install Docker
+    - name: Install Docker and dependencies
+      block:
+        - name: Install required system packages
+          apt:
+            name:
+              - apt-transport-https
+              - ca-certificates
+              - curl
+              - gnupg
+              - lsb-release
+              - software-properties-common
+            state: present
+          when: ansible_os_family == "Debian"
+
+        - name: Add Docker GPG key
+          apt_key:
+            url: https://download.docker.com/linux/ubuntu/gpg
+            state: present
+          when: ansible_os_family == "Debian"
+
+        - name: Add Docker repository
+          apt_repository:
+            repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+            state: present
+          when: ansible_os_family == "Debian"
+
+        - name: Install Docker
+          apt:
+            name:
+              - docker-ce
+              - docker-ce-cli
+              - containerd.io
+              - docker-compose-plugin
+            state: present
+          when: ansible_os_family == "Debian"
+
+        - name: Start and enable Docker service
+          systemd:
+            name: docker
+            state: started
+            enabled: yes
+            daemon_reload: yes
+
+        - name: Add user to docker group
+          user:
+            name: "{{ ansible_user }}"
+            groups: docker
+            append: yes
+          when: ansible_user is defined
+
+      tags:
+        - docker-install
+
+    # Task 2: Deploy Prometheus Configuration
+    - name: Deploy Prometheus Configuration
+      block:
+        - name: Copy prometheus.yml to monitoring node
+          copy:
+            src: prometheus.yml
+            dest: "{{ prometheus_config_dir }}/prometheus.yml"
+            owner: root
+            group: root
+            mode: '0644'
+            backup: yes
+          notify: restart prometheus container
+
+        - name: Copy alerting-rules.yml to monitoring node
+          copy:
+            src: alerting-rules.yml
+            dest: "{{ prometheus_config_dir }}/alerting-rules.yml"
+            owner: root
+            group: root
+            mode: '0644'
+            backup: yes
+          notify: restart prometheus container
+
+        - name: Validate prometheus configuration
+          command: >
+            docker run --rm
+            -v {{ prometheus_config_dir }}:/etc/prometheus
+            {{ prometheus_image }}
+            --config.file=/etc/prometheus/prometheus.yml
+            --log.level=info
+          register: prometheus_validation
+          changed_when: false
+          failed_when: prometheus_validation.rc != 0
+          tags:
+            - validate-config
+
+      tags:
+        - prometheus-config
+
+    # Task 3: Deploy Alertmanager Configuration
+    - name: Deploy Alertmanager Configuration
+      block:
+        - name: Copy alertmanager.yml to monitoring node
+          copy:
+            src: alertmanager.yml
+            dest: "{{ alertmanager_config_dir }}/alertmanager.yml"
+            owner: root
+            group: root
+            mode: '0644'
+            backup: yes
+          notify: restart alertmanager container
+
+        - name: Create alertmanager data directory
+          file:
+            path: "{{ alertmanager_config_dir }}/data"
+            state: directory
+            mode: '0755'
+            owner: nobody
+            group: nogroup
+
+        - name: Validate alertmanager configuration
+          command: >
+            docker run --rm
+            -v {{ alertmanager_config_dir }}:/etc/alertmanager
+            {{ alertmanager_image }}
+            --config.file=/etc/alertmanager/alertmanager.yml
+            --log.level=info
+          register: alertmanager_validation
+          changed_when: false
+          failed_when: alertmanager_validation.rc != 0
+          tags:
+            - validate-config
+
+      tags:
+        - alertmanager-config
+
+    # Task 4: Create Docker Compose file for Monitoring Stack
+    - name: Create Docker Compose configuration
+      block:
+        - name: Create docker-compose.yml for monitoring stack
+          copy:
+            content: |
+              ---
+              version: '3.8'
+
+              services:
+                prometheus:
+                  image: prom/prometheus:latest
+                  container_name: prometheus
+                  restart: unless-stopped
+                  ports:
+                    - "{{ prometheus_port }}:9090"
+                  volumes:
+                    - {{ prometheus_config_dir }}:/etc/prometheus
+                    - prometheus_data:/prometheus
+                  command:
+                    - '--config.file=/etc/prometheus/prometheus.yml'
+                    - '--storage.tsdb.path=/prometheus'
+                    - '--storage.tsdb.retention.time=30d'
+                    - '--web.console.libraries=/etc/prometheus/console_libraries'
+                    - '--web.console.templates=/etc/prometheus/consoles'
+                    - '--web.enable-lifecycle'
+                  environment:
+                    - TZ=UTC
+                  networks:
+                    - monitoring
+                  depends_on:
+                    - alertmanager
+                  healthcheck:
+                    test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+                    interval: 30s
+                    timeout: 5s
+                    retries: 3
+                    start_period: 30s
+                  logging:
+                    driver: "json-file"
+                    options:
+                      max-size: "10m"
+                      max-file: "3"
+
+                alertmanager:
+                  image: prom/alertmanager:latest
+                  container_name: alertmanager
+                  restart: unless-stopped
+                  ports:
+                    - "{{ alertmanager_port }}:9093"
+                  volumes:
+                    - {{ alertmanager_config_dir }}:/etc/alertmanager
+                    - {{ alertmanager_config_dir }}/data:/alertmanager
+                  command:
+                    - '--config.file=/etc/alertmanager/alertmanager.yml'
+                    - '--storage.path=/alertmanager'
+                  environment:
+                    - TZ=UTC
+                  networks:
+                    - monitoring
+                  healthcheck:
+                    test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+                    interval: 30s
+                    timeout: 5s
+                    retries: 3
+                    start_period: 30s
+                  logging:
+                    driver: "json-file"
+                    options:
+                      max-size: "10m"
+                      max-file: "3"
+
+              volumes:
+                prometheus_data:
+                  driver: local
+
+              networks:
+                monitoring:
+                  driver: bridge
+                  ipam:
+                    config:
+                      - subnet: 172.25.0.0/16
+            dest: "{{ docker_compose_dir }}/docker-compose.yml"
+            owner: root
+            group: root
+            mode: '0644'
+
+      tags:
+        - docker-compose
+
+    # Task 5: Start Monitoring Stack
+    - name: Start Monitoring Stack with Docker Compose
+      block:
+        - name: Pull latest Docker images
+          command: >
+            docker compose -f {{ docker_compose_dir }}/docker-compose.yml pull
+          register: docker_pull
+          changed_when: "'Downloaded newer image' in docker_pull.stdout"
+
+        - name: Start monitoring services
+          command: >
+            docker compose -f {{ docker_compose_dir }}/docker-compose.yml up -d
+          register: docker_compose_result
+          changed_when: "'Created' in docker_compose_result.stdout or 'Started' in docker_compose_result.stdout"
+
+        - name: Wait for Prometheus to be ready
+          uri:
+            url: "http://localhost:{{ prometheus_port }}/-/healthy"
+            status_code: 200
+          register: prometheus_ready
+          until: prometheus_ready.status == 200
+          retries: 30
+          delay: 2
+
+        - name: Wait for Alertmanager to be ready
+          uri:
+            url: "http://localhost:{{ alertmanager_port }}/-/healthy"
+            status_code: 200
+          register: alertmanager_ready
+          until: alertmanager_ready.status == 200
+          retries: 30
+          delay: 2
+
+        - name: Verify Prometheus is scraping targets
+          uri:
+            url: "http://localhost:{{ prometheus_port }}/api/v1/targets"
+            return_content: yes
+          register: prometheus_targets
+          until: prometheus_targets.status == 200
+          retries: 10
+          delay: 2
+
+      tags:
+        - docker-compose-start
+
+    # Task 6: Verify Setup
+    - name: Verify Monitoring Stack Setup
+      block:
+        - name: Check running containers
+          command: docker ps -a
+          register: docker_containers
+          changed_when: false
+
+        - name: Display running containers
+          debug:
+            msg: "{{ docker_containers.stdout_lines }}"
+
+        - name: Check Prometheus targets
+          uri:
+            url: "http://localhost:{{ prometheus_port }}/api/v1/targets"
+            return_content: yes
+          register: prometheus_targets_info
+
+        - name: Extract target information
+          set_fact:
+            active_targets: "{{ prometheus_targets_info.json.data.activeTargets }}"
+
+        - name: Display target information
+          debug:
+            msg: |
+              Active Targets in Prometheus:
+              {% for target in active_targets %}
+              - Job: {{ target.labels.job }}
+                Instance: {{ target.labels.instance }}
+                State: {{ target.health }}
+              {% endfor %}
+
+      tags:
+        - verify-setup
+
+    # Task 7: Display Access Information
+    - name: Display Access Information
+      block:
+        - name: Get server hostname/IP
+          command: hostname -I
+          register: server_ip
+          changed_when: false
+
+        - name: Display monitoring access information
+          debug:
+            msg:
+              - ""
+              - "╔════════════════════════════════════════════════╗"
+              - "║      MONITORING STACK DEPLOYMENT SUCCESS!      ║"
+              - "╚════════════════════════════════════════════════╝"
+              - ""
+              - "📊 Prometheus:"
+              - "   URL: http://{{ server_ip.stdout.split()[0] }}:{{ prometheus_port }}"
+              - "   Config: {{ prometheus_config_dir }}/prometheus.yml"
+              - ""
+              - "🚨 Alertmanager:"
+              - "   URL: http://{{ server_ip.stdout.split()[0] }}:{{ alertmanager_port }}"
+              - "   Config: {{ alertmanager_config_dir }}/alertmanager.yml"
+              - ""
+              - "📁 Working Directory:"
+              - "   {{ docker_compose_dir }}"
+              - ""
+              - "📝 Useful Commands:"
+              - "   View logs: docker compose -f {{ docker_compose_dir }}/docker-compose.yml logs -f"
+              - "   Restart: docker compose -f {{ docker_compose_dir }}/docker-compose.yml restart"
+              - "   Stop: docker compose -f {{ docker_compose_dir }}/docker-compose.yml down"
+              - ""
+              - "⚙️  Configuration Files:"
+              - "   Prometheus Rules: {{ prometheus_config_dir }}/alerting-rules.yml"
+              - "   Alertmanager Config: {{ alertmanager_config_dir }}/alertmanager.yml"
+              - ""
+              - "🔗 Monitored Targets:"
+              - "   Application: {{ app_node_ip }}:{{ app_port }}"
+              - "   Node Exporter: {{ app_node_ip }}:{{ node_exporter_port }}"
+              - ""
+
+      tags:
+        - display-info
+
+  # Handlers for service restart
+  handlers:
+    - name: restart prometheus container
+      command: >
+        docker compose -f {{ docker_compose_dir }}/docker-compose.yml restart prometheus
+
+    - name: restart alertmanager container
+      command: >
+        docker compose -f {{ docker_compose_dir }}/docker-compose.yml restart alertmanager
+
+  post_tasks:
+    - name: Create monitoring stack summary
+      copy:
+        content: |
+          # Monitoring Stack Deployment Summary
+          # Deployed at: {{ ansible_date_time.iso8601 }}
+          # Deployed by: Ansible (Person 5)
+
+          ## Services
+          - Prometheus: http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}:{{ prometheus_port }}
+          - Alertmanager: http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}:{{ alertmanager_port }}
+
+          ## Configuration
+          - Prometheus Config: {{ prometheus_config_dir }}/prometheus.yml
+          - Alert Rules: {{ prometheus_config_dir }}/alerting-rules.yml
+          - Alertmanager Config: {{ alertmanager_config_dir }}/alertmanager.yml
+
+          ## Monitored Services
+          - Application (app): {{ app_node_ip }}:{{ app_port }}
+          - Node Exporter: {{ app_node_ip }}:{{ node_exporter_port }}
+
+          ## Data Retention
+          - Prometheus: 30 days
+
+          ## Alert Rules Deployed
+          - High CPU Usage (>80%)
+          - Low Memory (<20%)
+          - High Disk Usage (>80%)
+          - High Request Latency (p95 > 200ms)
+          - High Error Rate (>5%)
+          - Service Down Detection
+          - Scrape Failure Detection
+        dest: "{{ docker_compose_dir }}/DEPLOYMENT_SUMMARY.md"
+        owner: root
+        group: root
+        mode: '0644'
+
+# Monitoring Setup Complete
+# All services should be running and ready for production use
