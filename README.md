@@ -74,13 +74,36 @@ After the container is running, test these URLs:
 - `http://localhost:3000/api/products`
 - `http://localhost:3000/metrics`
 
+
+## Run Monitoring Stack (Docker Compose)
+
+To run the application alongside Prometheus and Grafana in a unified network:
+
+```
+cd docker-compose
+docker compose up -d
+```
+Once running, you can access the services here:
+
+- `Target Application: http://localhost:3000/health`
+- `Prometheus UI: http://localhost:9090`
+- `Grafana UI: http://localhost:3001 (Default login: - - admin / admin)`
+
+## Run Load Testing (K6)
+
+```
+cd k6
+k6 run --out json=results.json load-test.js
+```
+Note: The script tests 1000 VUs for 5 minutes and tracks custom latency to trigger monitoring alerts.
+
 ## Repository Layout
 
 ```text
 .
 ├── README.md
 ├── run.sh
-└── app/
+├──  app/
 	├── Dockerfile
 	├── README.md
 	├── requirements.txt
@@ -91,4 +114,16 @@ After the container is running, test these URLs:
 			├── health.py
 			├── products.py
 			└── users.py
+└── terraform
+	├── main.tf
+	├── variables.tf
+	├── outputs.tf
+	└── terraform.tfvars 
+
+├── docker-compose/
+│   └── docker-compose.yml
+├── k6/
+│   ├── load-test.js
+│   └── results.json
+	
 ```
