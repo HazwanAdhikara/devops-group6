@@ -80,7 +80,7 @@ After the container is running, test these URLs:
 .
 ├── README.md
 ├── run.sh
-└── app/
+├──  app/
 	├── Dockerfile
 	├── README.md
 	├── requirements.txt
@@ -91,4 +91,9 @@ After the container is running, test these URLs:
 			├── health.py
 			├── products.py
 			└── users.py
+└── terraform
+	├── main.tf
+	├── variables.tf
+	├── outputs.tf
+	└── terraform.tfvars 
 ```
