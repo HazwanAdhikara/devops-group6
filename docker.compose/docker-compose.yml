@@ -1,5 +1,3 @@
-version: '3.8'
-
 networks:
   monitoring-network:
     driver: bridge
@@ -9,35 +7,72 @@ volumes:
   grafana_data:
 
 services:
-  # 1. Aplikasi Target (Buatan Person 1)
+  # 1. Target Application
   app:
-    build: 
+    build:
       context: ../app
       dockerfile: Dockerfile
     container_name: observability-app
+    command:
+      [
+        "uvicorn",
+        "src.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "3000",
+        "--workers",
+        "4",
+        "--log-level",
+        "warning",
+      ]
     ports:
       - "3000:3000"
     networks:
       - monitoring-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:3000/health')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  # 2. Prometheus Service
+  # 2. Node Exporter (Application Node Metrics)
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - monitoring-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9100/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 3. Prometheus Service
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
+    depends_on:
+      app:
+        condition: service_healthy
+      node-exporter:
+        condition: service_healthy
     ports:
       - "9090:9090"
     volumes:
       - prometheus_data:/prometheus
-    # Command ini agar prometheus bisa jalan tanpa config file sementara waktu 
-    # (nanti file confignya dibuat oleh Person 5)
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
     networks:
       - monitoring-network
     healthcheck:
@@ -46,10 +81,13 @@ services:
       timeout: 10s
       retries: 3
 
-  # 3. Grafana Service
+  # 4. Grafana Service
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
     ports:
       - "3001:3000" # Expose di 3001 karena 3000 dipakai app
     volumes:
@@ -59,7 +97,8 @@ services:
     networks:
       - monitoring-network
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      test:
+        ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 10s
-      retries: 3 
+      retries: 3

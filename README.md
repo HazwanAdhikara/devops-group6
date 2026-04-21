@@ -124,9 +124,9 @@ Note: The script tests 1000 VUs for 5 minutes and tracks custom latency to trigg
 	├── outputs.tf
 	└── terraform.tfvars
 
-├── docker-compose/
+├── docker.compose/
 │   └── docker-compose.yml
-├── k6/
+├── K6/
 │   ├── load-test.js
 │   └── results.json
 
