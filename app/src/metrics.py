@@ -4,36 +4,44 @@ from prometheus_client.platform_collector import PlatformCollector
 from prometheus_client.process_collector import ProcessCollector
 
 
-registry = CollectorRegistry()
+HISTOGRAM_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 2, 5)
 
-ProcessCollector(registry=registry)
-PlatformCollector(registry=registry)
-GCCollector(registry=registry)
+
+def create_registry() -> CollectorRegistry:
+    registry = CollectorRegistry()
+    ProcessCollector(registry=registry)
+    PlatformCollector(registry=registry)
+    GCCollector(registry=registry)
+    return registry
+
+
+registry = create_registry()
 
 http_requests_total = Counter(
-    "http_requests_total",
-    "Total number of HTTP requests",
-    labelnames=["method", "route", "status_code"],
+    name="http_requests_total",
+    documentation="Total number of HTTP requests",
+    labelnames=("method", "route", "status_code"),
     registry=registry,
 )
 
 http_request_duration_seconds = Histogram(
-    "http_request_duration_seconds",
-    "HTTP request duration in seconds",
-    labelnames=["method", "route", "status_code"],
-    buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 2, 5],
+    name="http_request_duration_seconds",
+    documentation="HTTP request duration in seconds",
+    labelnames=("method", "route", "status_code"),
+    buckets=HISTOGRAM_BUCKETS,
     registry=registry,
 )
 
 http_requests_in_progress = Gauge(
-    "http_requests_in_progress",
-    "Number of requests currently being processed",
-    labelnames=["method", "route"],
+    name="http_requests_in_progress",
+    documentation="Number of requests currently being processed",
+    labelnames=("method", "route"),
     registry=registry,
 )
 
 __all__ = [
     "registry",
+    "HISTOGRAM_BUCKETS",
     "http_requests_total",
     "http_request_duration_seconds",
     "http_requests_in_progress",

@@ -4,7 +4,7 @@ from fastapi import APIRouter, status
 from pydantic import BaseModel
 
 
-router = APIRouter()
+router = APIRouter(tags=["Users"])
 
 
 class UserCreate(BaseModel):
@@ -18,23 +18,33 @@ class User(BaseModel):
     email: str
 
 
-users: list[User] = [
-    User(id=str(uuid4()), name="Alice Johnson", email="alice@example.com"),
-    User(id=str(uuid4()), name="Brandon Lee", email="brandon@example.com"),
-    User(id=str(uuid4()), name="Carla Mendes", email="carla@example.com"),
-    User(id=str(uuid4()), name="Dimas Pratama", email="dimas@example.com"),
-    User(id=str(uuid4()), name="Eka Sari", email="eka@example.com"),
-    User(id=str(uuid4()), name="Fajar Nugroho", email="fajar@example.com"),
-    User(id=str(uuid4()), name="Gita Putri", email="gita@example.com"),
-    User(id=str(uuid4()), name="Hendra Saputra", email="hendra@example.com"),
-    User(id=str(uuid4()), name="Intan Permata", email="intan@example.com"),
-    User(id=str(uuid4()), name="Joko Santoso", email="joko@example.com"),
-]
+class UsersResponse(BaseModel):
+    data: list[User]
+    total: int
+
+
+def build_default_users() -> list[User]:
+    default_users = (
+        ("Alice Johnson", "alice@example.com"),
+        ("Brandon Lee", "brandon@example.com"),
+        ("Carla Mendes", "carla@example.com"),
+        ("Dimas Pratama", "dimas@example.com"),
+        ("Eka Sari", "eka@example.com"),
+        ("Fajar Nugroho", "fajar@example.com"),
+        ("Gita Putri", "gita@example.com"),
+        ("Hendra Saputra", "hendra@example.com"),
+        ("Intan Permata", "intan@example.com"),
+        ("Joko Santoso", "joko@example.com"),
+    )
+    return [User(id=str(uuid4()), name=name, email=email) for name, email in default_users]
+
+
+users: list[User] = build_default_users()
 
 
 @router.get("/users")
-async def list_users() -> dict[str, object]:
-    return {"data": users, "total": len(users)}
+async def list_users() -> UsersResponse:
+    return UsersResponse(data=users, total=len(users))
 
 
 @router.post("/users", status_code=status.HTTP_201_CREATED)
