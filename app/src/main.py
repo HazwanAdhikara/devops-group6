@@ -1,6 +1,8 @@
 import time
 
+from fastapi.exceptions import RequestValidationError
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
 from src.metrics import (
@@ -28,6 +30,32 @@ app = FastAPI(title=APP_TITLE)
 app.state.start_time = APP_START_TIME
 
 app.mount(METRICS_PATH, make_asgi_app(registry=registry))
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    missing_fields: list[str] = []
+    details: list[dict[str, object]] = []
+
+    for error in exc.errors():
+        location = [str(part) for part in error.get("loc", ())]
+        details.append(
+            {
+                "field": ".".join(location),
+                "message": str(error.get("msg", "Invalid value")),
+            }
+        )
+        if error.get("type") == "missing" and len(location) >= 2 and location[0] == "body":
+            missing_fields.append(location[1])
+
+    response_body: dict[str, object] = {
+        "message": "Invalid request body",
+        "errors": details,
+    }
+    if missing_fields:
+        response_body["required_fields"] = sorted(set(missing_fields))
+
+    return JSONResponse(status_code=422, content=response_body)
 
 
 @app.middleware("http")

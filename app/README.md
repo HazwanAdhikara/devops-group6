@@ -6,6 +6,8 @@ This folder contains the application node used in the observability mini project
 
 The application acts as the traffic target for k6 and the metrics source for Prometheus. It provides simple mock data endpoints so the monitoring stack can observe request patterns, response latency, and request volume.
 
+Data for users and products is stored in CSV files under `app/data`, so reads always come from file and newly created users are appended to `users.csv`.
+
 ## Tech Stack
 
 - Python 3.11
@@ -18,9 +20,10 @@ The application acts as the traffic target for k6 and the metrics source for Pro
 
 - `GET /health` returns app status and uptime
 - `GET /metrics` returns Prometheus metrics in text format
-- `GET /api/users` returns 10 mock users
-- `POST /api/users` creates a new user in memory
-- `GET /api/products` returns 5 mock products
+- `GET /api/users` returns users from CSV (`app/data/users.csv`)
+- `POST /api/users` creates a new user and appends it to CSV
+- `GET /api/products` returns products from CSV (`app/data/products.csv`)
+- `POST /api/products` creates a new product and appends it to CSV
 - `GET /api/products/{id}` returns a product by ID or `404`
 
 ## What `/metrics` Does
@@ -62,8 +65,10 @@ If you want to run it manually instead, use:
 ```bash
 cd app
 docker build -t observability-app .
-docker run --rm -p 3000:3000 observability-app
+docker run --rm -p 3000:3000 -v "$(pwd)/data:/app/data" observability-app
 ```
+
+The bind mount keeps CSV updates on your host machine, so data is still available after the container stops.
 
 ## Docker Image Details
 

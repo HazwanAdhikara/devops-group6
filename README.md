@@ -39,6 +39,7 @@ Other components such as Terraform, Ansible, Prometheus, Grafana, and k6 will be
 - `GET /api/users` - mock user list
 - `POST /api/users` - create a new user
 - `GET /api/products` - mock product list
+- `POST /api/products` - create a new product
 - `GET /api/products/{id}` - product details by ID
 
 ## Run With Docker
@@ -62,8 +63,10 @@ If you prefer to run the commands manually:
 ```bash
 cd app
 docker build -t observability-app .
-docker run --rm -p 3000:3000 observability-app
+docker run --rm -p 3000:3000 -v "$(pwd)/data:/app/data" observability-app
 ```
+
+The mounted volume keeps CSV data in `app/data` persistent on the host even after the container is stopped.
 
 ## Verify the App
 
@@ -74,7 +77,6 @@ After the container is running, test these URLs:
 - `http://localhost:3000/api/products`
 - `http://localhost:3000/metrics`
 
-
 ## Run Monitoring Stack (Docker Compose)
 
 To run the application alongside Prometheus and Grafana in a unified network:
@@ -83,6 +85,7 @@ To run the application alongside Prometheus and Grafana in a unified network:
 cd docker-compose
 docker compose up -d
 ```
+
 Once running, you can access the services here:
 
 - `Target Application: http://localhost:3000/health`
@@ -95,6 +98,7 @@ Once running, you can access the services here:
 cd k6
 k6 run --out json=results.json load-test.js
 ```
+
 Note: The script tests 1000 VUs for 5 minutes and tracks custom latency to trigger monitoring alerts.
 
 ## Repository Layout
@@ -118,12 +122,12 @@ Note: The script tests 1000 VUs for 5 minutes and tracks custom latency to trigg
 	├── main.tf
 	├── variables.tf
 	├── outputs.tf
-	└── terraform.tfvars 
+	└── terraform.tfvars
 
 ├── docker-compose/
 │   └── docker-compose.yml
 ├── k6/
 │   ├── load-test.js
 │   └── results.json
-	
+
 ```

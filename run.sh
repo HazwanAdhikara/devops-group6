@@ -1,1 +1,1 @@
-cd app && docker build -t observability-app . && docker run --rm -p 3000:3000 observability-app
+cd app && docker build -t observability-app . && docker run --rm -p 3000:3000 -v "$(pwd)/data:/app/data" observability-app
