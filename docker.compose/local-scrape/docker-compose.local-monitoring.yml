@@ -1,0 +1,12 @@
+services:
+  prometheus:
+    volumes:
+      - prometheus_data:/prometheus
+      - ./local-scrape/prometheus.local.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../ansible/files/grafana/provisioning/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - ../ansible/files/grafana/provisioning/dashboards/dashboard.yml:/etc/grafana/provisioning/dashboards/dashboard.yml:ro
+      - ../ansible/files/grafana/dashboards:/etc/grafana/provisioning/dashboards/json:ro

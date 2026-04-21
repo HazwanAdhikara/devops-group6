@@ -1,0 +1,130 @@
+---
+- name: Deploy Grafana with provisioning
+  hosts: monitoring_nodes
+  become: true
+  gather_facts: true
+
+  vars:
+    grafana_root: /opt/monitoring/grafana
+    grafana_port: 3000
+    grafana_admin_password: admin
+
+  tasks:
+    - name: Ensure Docker is installed
+      ansible.builtin.command: docker --version
+      register: docker_check
+      changed_when: false
+      failed_when: docker_check.rc != 0
+
+    - name: Ensure Docker Compose plugin is installed
+      ansible.builtin.command: docker compose version
+      register: docker_compose_check
+      changed_when: false
+      failed_when: docker_compose_check.rc != 0
+
+    - name: Ensure Grafana directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+        owner: root
+        group: root
+      loop:
+        - "{{ grafana_root }}"
+        - "{{ grafana_root }}/provisioning"
+        - "{{ grafana_root }}/provisioning/datasources"
+        - "{{ grafana_root }}/provisioning/dashboards"
+        - "{{ grafana_root }}/provisioning/dashboards/json"
+
+    - name: Copy Grafana datasource provisioning file
+      ansible.builtin.copy:
+        src: ../files/grafana/provisioning/datasources/datasource.yml
+        dest: "{{ grafana_root }}/provisioning/datasources/datasource.yml"
+        mode: "0644"
+        owner: root
+        group: root
+        backup: true
+
+    - name: Copy Grafana dashboard provisioning file
+      ansible.builtin.copy:
+        src: ../files/grafana/provisioning/dashboards/dashboard.yml
+        dest: "{{ grafana_root }}/provisioning/dashboards/dashboard.yml"
+        mode: "0644"
+        owner: root
+        group: root
+        backup: true
+
+    - name: Copy Grafana dashboards
+      ansible.builtin.copy:
+        src: ../files/grafana/dashboards/
+        dest: "{{ grafana_root }}/provisioning/dashboards/json/"
+        mode: "0644"
+        owner: root
+        group: root
+        backup: true
+
+    - name: Create Grafana Docker Compose file
+      ansible.builtin.copy:
+        dest: "{{ grafana_root }}/docker-compose.yml"
+        mode: "0644"
+        owner: root
+        group: root
+        content: |
+          services:
+            grafana:
+              image: grafana/grafana:latest
+              container_name: grafana
+              restart: unless-stopped
+              ports:
+                - "{{ grafana_port }}:3000"
+              environment:
+                GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
+              volumes:
+                - grafana_data:/var/lib/grafana
+                - ./provisioning/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+                - ./provisioning/dashboards/dashboard.yml:/etc/grafana/provisioning/dashboards/dashboard.yml:ro
+                - ./provisioning/dashboards/json:/etc/grafana/provisioning/dashboards/json:ro
+
+          volumes:
+            grafana_data:
+
+    - name: Pull Grafana image
+      ansible.builtin.command: docker compose -f {{ grafana_root }}/docker-compose.yml pull
+      register: grafana_pull
+      changed_when: "'Downloaded newer image' in grafana_pull.stdout"
+
+    - name: Start Grafana container
+      ansible.builtin.command: docker compose -f {{ grafana_root }}/docker-compose.yml up -d
+      register: grafana_up
+      changed_when: "'Created' in grafana_up.stdout or 'Started' in grafana_up.stdout"
+
+    - name: Wait for Grafana port to be ready
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ grafana_port }}"
+        timeout: 60
+
+    - name: Check Grafana health endpoint
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ grafana_port }}/api/health"
+        method: GET
+        return_content: true
+        status_code: 200
+      register: grafana_health
+      retries: 15
+      delay: 3
+      until: grafana_health.status == 200
+
+    - name: Show Grafana health result
+      ansible.builtin.debug:
+        var: grafana_health.json
+
+    - name: Show Grafana access information
+      ansible.builtin.debug:
+        msg:
+          - "Grafana deployed successfully"
+          - "Path: {{ grafana_root }}"
+          - "URL: http://{{ ansible_host }}:{{ grafana_port }}"
+          - "Datasource provisioning: {{ grafana_root }}/provisioning/datasources/datasource.yml"
+          - "Dashboard provisioning: {{ grafana_root }}/provisioning/dashboards/dashboard.yml"
+          - "Dashboards path: {{ grafana_root }}/provisioning/dashboards/json"
