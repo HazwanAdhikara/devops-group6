@@ -101,33 +101,63 @@ k6 run --out json=results.json load-test.js
 
 Note: The script tests 1000 VUs for 5 minutes and tracks custom latency to trigger monitoring alerts.
 
+## Dokumentasi K6
+<img width="1107" height="486" alt="Screenshot 2026-04-22 072825" src="https://github.com/user-attachments/assets/00c2b481-e5df-407e-911b-676c332b7905" />
+
+
+## Dokumentasi Grafana
+<img width="1919" height="770" alt="Screenshot 2026-04-22 072907" src="https://github.com/user-attachments/assets/d8917a6b-667f-464b-96b6-5b00ab421366" />  
+
+
 ## Repository Layout
 
 ```text
 .
 ├── README.md
 ├── run.sh
-├──  app/
-	├── Dockerfile
-	├── README.md
-	├── requirements.txt
-	└── src/
-		├── main.py
-		├── metrics.py
-		└── routes/
-			├── health.py
-			├── products.py
-			└── users.py
-└── terraform
-	├── main.tf
-	├── variables.tf
-	├── outputs.tf
-	└── terraform.tfvars
-
-├── docker-compose/
-│   └── docker-compose.yml
-├── k6/
+├── app/
+│   ├── Dockerfile
+│   ├── README.md
+│   ├── requirements.txt
+│   ├── data/
+│   └── src/
+│       ├── main.py
+│       ├── metrics.py
+│       └── routes/
+│           ├── health.py
+│           ├── products.py
+│           └── users.py
+├── docker.compose/
+│   ├── docker-compose.yml
+│   └── local-scrape/
+│       └── docker-compose.local-monitoring.yml
+├── K6/
 │   ├── load-test.js
 │   └── results.json
+├── terraform/
+│   ├── main.tf
+│   ├── outputs.tf
+│   ├── terraform.tfvars
+│   └── variables.tf
+└── ansible/
+    ├── ansible.cfg
+    ├── inventory.ini
+    ├── files/
+    │   ├── prometheus.yml
+    │   ├── alerting-rules.yml
+    │   ├── alertmanager.yml
+    │   └── grafana/
+    │       ├── dashboards/
+    │       │   ├── app-overview.json
+    │       │   ├── alerts-overview.json
+    │       │   └── performance-traceability.json
+    │       └── provisioning/
+    │           ├── dashboards/
+    │           │   └── dashboard.yml
+    │           └── datasources/
+    │               └── datasource.yml
+    └── playbooks/
+        ├── monitoring.yml
+        └── grafana.yml
 
 ```
