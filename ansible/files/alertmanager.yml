@@ -1,185 +1,23 @@
-# Alertmanager Configuration for DevOps Monitoring Stack
-# Person 5 - Monitoring System
-# Last Updated: 2026-04-21
-
-# Global configuration
 global:
-  # The maximum number of SMTP AUTH attempts before giving up
-  smtp_smarthost: 'smtp.gmail.com:587'
-  smtp_auth_username: 'your-email@gmail.com'
-  smtp_auth_password: 'your-app-password'
-  smtp_from: 'alertmanager@example.com'
-  
-  # The default timeout for Slack requests
-  slack_api_url: ''  # Set your Slack webhook URL here
-  
-  # The default timeout for resolving a conflict
   resolve_timeout: 5m
 
-# The root route with all parameters
 route:
-  # The receiver to route all alerts by default
   receiver: 'default'
-  
-  # How long to initially wait to send a notification for a group of alerts
   group_wait: 10s
-  
-  # How long to wait before sending a notification about new alerts added to a group
-  group_interval: 10s
-  
-  # How long an alert will stay in a group before the next notification is sent
-  repeat_interval: 12h
-  
-  # Optional grouping of alerts
-  group_by: ['alertname', 'cluster', 'service', 'severity']
-  
-  # Child routes can override the parent
-  routes:
-    # Critical alerts - route to all channels
-    - match:
-        severity: critical
-      receiver: 'critical-alerts'
-      group_wait: 5s
-      group_interval: 5s
-      repeat_interval: 1h
-      continue: true
-    
-    # Warning alerts - route to warning channel
-    - match:
-        severity: warning
-      receiver: 'warning-alerts'
-      group_wait: 30s
-      group_interval: 30s
-      repeat_interval: 4h
-    
-    # Application alerts
-    - match_re:
-        component: 'application|availability'
-      receiver: 'app-alerts'
-      group_wait: 10s
-      group_interval: 10s
-      repeat_interval: 2h
+  group_interval: 30s
+  repeat_interval: 1h
+  group_by: ['alertname', 'severity', 'instance']
 
-# Receivers configuration
 receivers:
-  # Default receiver (usually webhook or email)
   - name: 'default'
-    email_configs:
-      - to: 'devops-team@example.com'
-        from: 'alertmanager@example.com'
-        smarthost: 'smtp.gmail.com:587'
-        auth_username: 'your-email@gmail.com'
-        auth_password: 'your-app-password'
-        headers:
-          Subject: '[{{ .GroupLabels.alertname }}] Default Alert'
-        html: |
-          {{ range .Alerts }}
-            Alerts:
-            {{ .Labels.alertname }}: {{ .Annotations.description }}
-          {{ end }}
 
-  # Critical alerts receiver (Email + Slack + Webhook)
-  - name: 'critical-alerts'
-    email_configs:
-      - to: 'devops-critical@example.com'
-        from: 'alertmanager@example.com'
-        smarthost: 'smtp.gmail.com:587'
-        auth_username: 'your-email@gmail.com'
-        auth_password: 'your-app-password'
-        headers:
-          Subject: '🚨 CRITICAL ALERT: {{ .GroupLabels.alertname }}'
-        html: |
-          <h2>CRITICAL ALERT</h2>
-          <p><strong>Alert:</strong> {{ .GroupLabels.alertname }}</p>
-          <p><strong>Severity:</strong> {{ .CommonLabels.severity }}</p>
-          {{ range .Alerts }}
-            <p>{{ .Annotations.summary }}</p>
-            <p>{{ .Annotations.description }}</p>
-          {{ end }}
-    
-    slack_configs:
-      - api_url: 'YOUR_SLACK_WEBHOOK_URL'
-        channel: '#critical-alerts'
-        title: '🚨 CRITICAL ALERT: {{ .GroupLabels.alertname }}'
-        text: |
-          {{ range .Alerts }}
-            *Alert:* {{ .Labels.alertname }}
-            *Severity:* {{ .Labels.severity }}
-            *Component:* {{ .Labels.component }}
-            *Instance:* {{ .Labels.instance }}
-            *Summary:* {{ .Annotations.summary }}
-            *Description:* {{ .Annotations.description }}
-            ---
-          {{ end }}
-        send_resolved: true
-    
-    webhook_configs:
-      - url: 'http://localhost:5000/alerts'  # Replace with your webhook endpoint
-        send_resolved: true
-
-  # Warning alerts receiver (Email + Slack)
-  - name: 'warning-alerts'
-    email_configs:
-      - to: 'devops-warnings@example.com'
-        from: 'alertmanager@example.com'
-        smarthost: 'smtp.gmail.com:587'
-        auth_username: 'your-email@gmail.com'
-        auth_password: 'your-app-password'
-        headers:
-          Subject: '⚠️ WARNING: {{ .GroupLabels.alertname }}'
-        html: |
-          <h2>WARNING ALERT</h2>
-          <p><strong>Alert:</strong> {{ .GroupLabels.alertname }}</p>
-          {{ range .Alerts }}
-            <p>{{ .Annotations.summary }}</p>
-            <p>{{ .Annotations.description }}</p>
-          {{ end }}
-    
-    slack_configs:
-      - api_url: 'YOUR_SLACK_WEBHOOK_URL'
-        channel: '#warnings'
-        title: '⚠️ WARNING: {{ .GroupLabels.alertname }}'
-        text: |
-          {{ range .Alerts }}
-            *Alert:* {{ .Labels.alertname }}
-            *Severity:* {{ .Labels.severity }}
-            *Summary:* {{ .Annotations.summary }}
-            ---
-          {{ end }}
-        send_resolved: true
-
-  # Application alerts receiver
-  - name: 'app-alerts'
-    email_configs:
-      - to: 'developers@example.com'
-        from: 'alertmanager@example.com'
-        smarthost: 'smtp.gmail.com:587'
-        auth_username: 'your-email@gmail.com'
-        auth_password: 'your-app-password'
-        headers:
-          Subject: 'Application Alert: {{ .GroupLabels.alertname }}'
-    
-    slack_configs:
-      - api_url: 'YOUR_SLACK_WEBHOOK_URL'
-        channel: '#app-alerts'
-        title: 'App Alert: {{ .GroupLabels.alertname }}'
-
-# Inhibition rules
 inhibit_rules:
-  # Inhibit warning alerts if critical alert is firing for the same component
-  - source_match:
-      severity: 'critical'
-    target_match:
-      severity: 'warning'
-    equal: ['alertname', 'dev', 'instance', 'component']
-  
-  # Inhibit critical alerts if service is down (more specific issue)
-  - source_match:
-      alertname: 'ServiceDown'
-    target_match_re:
-      alertname: 'High.*'
-    equal: ['instance', 'job']
+  - source_matchers:
+      - severity = critical
+    target_matchers:
+      - severity = warning
+    equal:
+      - alertname
+      - instance
 
-# Templates
 templates: []
-# - '/etc/alertmanager/templates/*.tmpl'

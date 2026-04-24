@@ -25,6 +25,28 @@
     alertmanager_image: "prom/alertmanager:latest"
   
   pre_tasks:
+    # ==========================================
+    # Cleanup Duplicate Docker Repository
+    # ==========================================
+    # [BARU] Membersihkan repo Docker duplikat yang pernah dibuat tanpa signed-by.
+    # Ini mencegah error apt: Conflicting values set for option Signed-By.
+    - name: Disable duplicate Docker repository without signed-by
+      replace:
+        path: "{{ item }}"
+        regexp: '^deb \[arch=amd64\] https://download\.docker\.com/linux/ubuntu {{ ansible_distribution_release }} stable$'
+        replace: '# [LAMA - dinonaktifkan otomatis oleh Ansible] deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable'
+      loop:
+        - /etc/apt/sources.list.d/download_docker_com_linux_ubuntu.list
+        - /etc/apt/sources.list.d/download_docker_com_linux_ubuntu.list.save
+        - /etc/apt/sources.list.d/download_docker_com_linux_ubuntu.list.backup
+      failed_when: false
+      tags:
+        - docker
+        - docker-repo
+        - cleanup
+
+
+
     - name: Update apt cache
       apt:
         update_cache: yes
@@ -43,6 +65,13 @@
         - "{{ prometheus_config_dir }}"
         - "{{ alertmanager_config_dir }}"
 
+        # [BARU] Direktori untuk provisioning dan dashboard Grafana.
+        - "{{ docker_compose_dir }}/grafana"
+        - "{{ docker_compose_dir }}/grafana/provisioning"
+        - "{{ docker_compose_dir }}/grafana/provisioning/datasources"
+        - "{{ docker_compose_dir }}/grafana/provisioning/dashboards"
+        - "{{ docker_compose_dir }}/grafana/dashboards"
+
     - name: Print monitoring setup information
       debug:
         msg:
@@ -55,8 +84,78 @@
           - "================================"
 
   tasks:
-    # Task 1: Install Docker
+    # Task 1: Verify Docker
+    # [BARU] Docker installation dikelola oleh dependencies.yml.
+    # monitoring.yml hanya melakukan verifikasi agar tidak terjadi duplikasi repo/install Docker.
+    - name: Verify Docker is already installed
+      command: docker --version
+      register: docker_version
+      changed_when: false
+      tags:
+        - docker
+        - verify
+
+    - name: Display Docker version
+      debug:
+        msg: "{{ docker_version.stdout }}"
+      tags:
+        - docker
+        - verify
+
+    - name: Ensure Docker service is running
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+      tags:
+        - docker
+        - docker-service
+
+    - name: Ensure Ansible SSH user is in docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+      when: ansible_user is defined
+      tags:
+        - docker
+        - docker-user
+
+    # ==========================================
+    # UFW ports required by monitoring stack
+    # ==========================================
+    - name: Allow Prometheus port through UFW
+      ufw:
+        rule: allow
+        port: "{{ prometheus_port }}"
+        proto: tcp
+      tags:
+        - firewall
+        - prometheus
+
+    - name: Allow Alertmanager port through UFW
+      ufw:
+        rule: allow
+        port: "{{ alertmanager_port }}"
+        proto: tcp
+      tags:
+        - firewall
+        - alertmanager
+
+    - name: Allow Grafana port through UFW
+      ufw:
+        rule: allow
+        port: "3000"
+        proto: tcp
+      tags:
+        - firewall
+        - grafana
+
+    # Task 1 Lama: Install Docker
+    # [LAMA - dinonaktifkan] Install Docker/repository Docker sudah dipindahkan ke dependencies.yml.
+    # Blok ini dipertahankan sebagai dokumentasi kode lama, tetapi tidak dijalankan agar tidak membuat repo Docker duplikat.
     - name: Install Docker and dependencies
+      when: false
       block:
         - name: Install required system packages
           apt:
@@ -70,17 +169,21 @@
             state: present
           when: ansible_os_family == "Debian"
 
-        - name: Add Docker GPG key
-          apt_key:
-            url: https://download.docker.com/linux/ubuntu/gpg
-            state: present
-          when: ansible_os_family == "Debian"
-
+        # [LAMA - dinonaktifkan] Docker repository lama tanpa signed-by menyebabkan konflik apt.
+        # Dibiarkan di dalam block when:false sebagai dokumentasi, tetapi tidak digunakan lagi.
         - name: Add Docker repository
           apt_repository:
             repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
             state: present
           when: ansible_os_family == "Debian"
+
+      # [LAMA - dinonaktifkan] Docker GPG key sudah dikelola oleh dependencies.yml.
+      # Task ini dapat menyebabkan konfigurasi Docker repo menjadi duplikat.
+      # - name: Add Docker GPG key
+      #   apt_key:
+      #     url: https://download.docker.com/linux/ubuntu/gpg
+      #     state: present
+      #     keyring: /usr/share/keyrings/docker-archive-keyring.gpg
 
         - name: Install Docker
           apt:
@@ -114,7 +217,11 @@
       block:
         - name: Copy prometheus.yml to monitoring node
           copy:
-            src: prometheus.yml
+            # [LAMA - dinonaktifkan] Path ini berpotensi salah karena file berada di ansible/files.
+            # src: prometheus.yml
+
+            # [BARU] Path relatif dari ansible/playbooks/monitoring.yml ke ansible/files/prometheus.yml.
+            src: ../files/prometheus.yml
             dest: "{{ prometheus_config_dir }}/prometheus.yml"
             owner: root
             group: root
@@ -124,7 +231,11 @@
 
         - name: Copy alerting-rules.yml to monitoring node
           copy:
-            src: alerting-rules.yml
+            # [LAMA - dinonaktifkan] Path ini berpotensi salah karena file berada di ansible/files.
+            # src: alerting-rules.yml
+
+            # [BARU] Path relatif dari ansible/playbooks/monitoring.yml ke ansible/files/alerting-rules.yml.
+            src: ../files/alerting-rules.yml
             dest: "{{ prometheus_config_dir }}/alerting-rules.yml"
             owner: root
             group: root
@@ -132,13 +243,22 @@
             backup: yes
           notify: restart prometheus container
 
+        - name: Pull Prometheus image before validation
+          command: docker pull {{ prometheus_image }}
+          register: prometheus_image_pull
+          changed_when: >
+            'Downloaded newer image' in prometheus_image_pull.stdout or
+            'Downloaded newer image' in prometheus_image_pull.stderr or
+            'Pull complete' in prometheus_image_pull.stdout or
+            'Pull complete' in prometheus_image_pull.stderr
+
         - name: Validate prometheus configuration
           command: >
             docker run --rm
             -v {{ prometheus_config_dir }}:/etc/prometheus
+            --entrypoint promtool
             {{ prometheus_image }}
-            --config.file=/etc/prometheus/prometheus.yml
-            --log.level=info
+            check config /etc/prometheus/prometheus.yml
           register: prometheus_validation
           changed_when: false
           failed_when: prometheus_validation.rc != 0
@@ -153,7 +273,11 @@
       block:
         - name: Copy alertmanager.yml to monitoring node
           copy:
-            src: alertmanager.yml
+            # [LAMA - dinonaktifkan] Path ini berpotensi salah karena file berada di ansible/files.
+            # src: alertmanager.yml
+
+            # [BARU] Path relatif dari ansible/playbooks/monitoring.yml ke ansible/files/alertmanager.yml.
+            src: ../files/alertmanager.yml
             dest: "{{ alertmanager_config_dir }}/alertmanager.yml"
             owner: root
             group: root
@@ -161,21 +285,39 @@
             backup: yes
           notify: restart alertmanager container
 
+        # [LAMA - dinonaktifkan] Permission 0755 dengan owner nobody:nogroup bisa menyebabkan Alertmanager gagal menulis data.
+        # - name: Create alertmanager data directory
+        #   file:
+        #     path: "{{ alertmanager_config_dir }}/data"
+        #     state: directory
+        #     mode: '0755'
+        #     owner: nobody
+        #     group: nogroup
+
         - name: Create alertmanager data directory
           file:
             path: "{{ alertmanager_config_dir }}/data"
             state: directory
-            mode: '0755'
-            owner: nobody
-            group: nogroup
+            mode: '0777'
+            owner: root
+            group: root
+
+        - name: Pull Alertmanager image before validation
+          command: docker pull {{ alertmanager_image }}
+          register: alertmanager_image_pull
+          changed_when: >
+            'Downloaded newer image' in alertmanager_image_pull.stdout or
+            'Downloaded newer image' in alertmanager_image_pull.stderr or
+            'Pull complete' in alertmanager_image_pull.stdout or
+            'Pull complete' in alertmanager_image_pull.stderr
 
         - name: Validate alertmanager configuration
           command: >
             docker run --rm
             -v {{ alertmanager_config_dir }}:/etc/alertmanager
+            --entrypoint amtool
             {{ alertmanager_image }}
-            --config.file=/etc/alertmanager/alertmanager.yml
-            --log.level=info
+            check-config /etc/alertmanager/alertmanager.yml
           register: alertmanager_validation
           changed_when: false
           failed_when: alertmanager_validation.rc != 0
@@ -184,8 +326,30 @@
 
       tags:
         - alertmanager-config
+    
+    # ==========================================
+    # Grafana Configuration
+    # ==========================================
+    # Task 4: Deploy Grafana Configuration
+    - name: Deploy Grafana Configuration
+      block:
+        # [BARU] Copy provisioning datasource, dashboard provider, dan dashboard JSON Grafana.
+        - name: Copy Grafana provisioning and dashboards to monitoring node
+          copy:
+            src: ../files/grafana/
+            dest: "{{ docker_compose_dir }}/grafana/"
+            owner: root
+            group: root
+            mode: '0644'
+            directory_mode: '0755'
+          notify: restart grafana container
+      
+      tags:
+        - grafana
+        - monitoring
+        - dashboards
 
-    # Task 4: Create Docker Compose file for Monitoring Stack
+    # Task 5: Create Docker Compose file for Monitoring Stack
     - name: Create Docker Compose configuration
       block:
         - name: Create docker-compose.yml for monitoring stack
@@ -257,8 +421,59 @@
                       max-size: "10m"
                       max-file: "3"
 
+                grafana:
+                  image: grafana/grafana-oss:latest
+                  container_name: grafana
+                  restart: unless-stopped
+                  depends_on:
+                    - prometheus
+                  ports:
+                    - "3000:3000"
+                  environment:
+                    # [BARU] Mengaktifkan akses dashboard tanpa login manual.
+                    - GF_AUTH_ANONYMOUS_ENABLED=true
+                    - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+
+                    # [BARU] Login form tetap aktif agar admin masih bisa login dan edit dashboard.
+                    - GF_AUTH_DISABLE_LOGIN_FORM=false
+
+                    # [BARU] Admin credential tetap disediakan untuk akses edit/configuration.
+                    - GF_SECURITY_ADMIN_USER=admin
+                    - GF_SECURITY_ADMIN_PASSWORD=admin
+                    - GF_USERS_ALLOW_SIGN_UP=false
+
+                    - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/observability-dashboard.json
+                  volumes:
+                    - {{ docker_compose_dir }}/grafana/provisioning:/etc/grafana/provisioning:ro
+                    - {{ docker_compose_dir }}/grafana/dashboards:/var/lib/grafana/dashboards:ro
+                    - grafana_data:/var/lib/grafana
+                  networks:
+                    - monitoring
+
+                # ==========================================
+                # Node Exporter for Monitoring VM
+                # ==========================================
+                # [BARU] Node Exporter untuk mengambil metrik CPU, RAM, disk, dan network dari Monitoring VM.
+                node-exporter-monitoring:
+                  image: prom/node-exporter:latest
+                  container_name: node-exporter-monitoring
+                  restart: unless-stopped
+                  ports:
+                    - "9100:9100"
+                  command:
+                    - "--path.rootfs=/host"
+                  volumes:
+                    - "/:/host:ro,rslave"
+                  pid: host
+                  networks:
+                    - monitoring
+
               volumes:
                 prometheus_data:
+                  driver: local
+                alertmanager_data:
+                  driver: local
+                grafana_data:
                   driver: local
 
               networks:
@@ -275,20 +490,36 @@
       tags:
         - docker-compose
 
-    # Task 5: Start Monitoring Stack
+    # Task 6: Start Monitoring Stack
     - name: Start Monitoring Stack with Docker Compose
       block:
         - name: Pull latest Docker images
           command: >
             docker compose -f {{ docker_compose_dir }}/docker-compose.yml pull
           register: docker_pull
-          changed_when: "'Downloaded newer image' in docker_pull.stdout"
+          changed_when: >
+            'Downloaded newer image' in docker_pull.stdout or
+            'Downloaded newer image' in docker_pull.stderr or
+            'Pull complete' in docker_pull.stdout or
+            'Pull complete' in docker_pull.stderr
 
         - name: Start monitoring services
           command: >
             docker compose -f {{ docker_compose_dir }}/docker-compose.yml up -d
           register: docker_compose_result
-          changed_when: "'Created' in docker_compose_result.stdout or 'Started' in docker_compose_result.stdout"
+          changed_when: >
+            'Created' in docker_compose_result.stdout or
+            'Started' in docker_compose_result.stdout or
+            'Creating' in docker_compose_result.stdout or
+            'Starting' in docker_compose_result.stdout or
+            'Recreated' in docker_compose_result.stdout or
+            'Recreating' in docker_compose_result.stdout or
+            'Created' in docker_compose_result.stderr or
+            'Started' in docker_compose_result.stderr or
+            'Creating' in docker_compose_result.stderr or
+            'Starting' in docker_compose_result.stderr or
+            'Recreated' in docker_compose_result.stderr or
+            'Recreating' in docker_compose_result.stderr
 
         - name: Wait for Prometheus to be ready
           uri:
@@ -320,7 +551,7 @@
       tags:
         - docker-compose-start
 
-    # Task 6: Verify Setup
+    # Task 7: Verify Setup
     - name: Verify Monitoring Stack Setup
       block:
         - name: Check running containers
@@ -355,7 +586,7 @@
       tags:
         - verify-setup
 
-    # Task 7: Display Access Information
+    # Task 8: Display Access Information
     - name: Display Access Information
       block:
         - name: Get server hostname/IP
@@ -378,6 +609,12 @@
               - "🚨 Alertmanager:"
               - "   URL: http://{{ server_ip.stdout.split()[0] }}:{{ alertmanager_port }}"
               - "   Config: {{ alertmanager_config_dir }}/alertmanager.yml"
+              - ""
+              - "📈 Grafana:"
+              - "   URL: http://{{ ansible_host }}:3000"
+              - "   Username: admin"
+              - "   Password: admin"
+              - "   Dashboard: DevOps Observability Dashboard"
               - ""
               - "📁 Working Directory:"
               - "   {{ docker_compose_dir }}"
@@ -404,10 +641,23 @@
     - name: restart prometheus container
       command: >
         docker compose -f {{ docker_compose_dir }}/docker-compose.yml restart prometheus
+      register: restart_prometheus_result
+      changed_when: restart_prometheus_result.rc == 0
+      failed_when: false
 
     - name: restart alertmanager container
       command: >
         docker compose -f {{ docker_compose_dir }}/docker-compose.yml restart alertmanager
+      register: restart_alertmanager_result
+      changed_when: restart_alertmanager_result.rc == 0
+      failed_when: false
+
+    - name: restart grafana container
+      command: >
+        docker compose -f {{ docker_compose_dir }}/docker-compose.yml restart grafana
+      register: restart_grafana_result
+      changed_when: restart_grafana_result.rc == 0
+      failed_when: false
 
   post_tasks:
     - name: Create monitoring stack summary
@@ -420,6 +670,7 @@
           ## Services
           - Prometheus: http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}:{{ prometheus_port }}
           - Alertmanager: http://{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}:{{ alertmanager_port }}
+          - Grafana: http://{{ ansible_host }}:3000
 
           ## Configuration
           - Prometheus Config: {{ prometheus_config_dir }}/prometheus.yml

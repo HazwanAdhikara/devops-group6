@@ -1,0 +1,28 @@
+@"
+
+# Terraform local files
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Secrets
+.env
+*.pem
+id_rsa
+id_rsa.pub
+*.key
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+"@ | Add-Content .gitignore
+# Terraform lock file
+.terraform.lock.hcl

@@ -1,0 +1,13 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+
+    # Grafana dan Prometheus berjalan dalam Docker Compose network yang sama.
+    # Jadi gunakan nama service Docker Compose, bukan localhost.
+    url: http://prometheus:9090
+
+    isDefault: true
+    editable: true
