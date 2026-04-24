@@ -4,12 +4,34 @@
 # ==========================================
 
 ---
-- name: Install Docker dan Dependencies pada App Nodes
-  hosts: app_nodes
+# [LAMA - dinonaktifkan] Play lama hanya menargetkan app_nodes, sehingga Docker tidak terinstall di monitoring node.
+# - name: Install Docker dan Dependencies pada App Nodes
+#   hosts: app_nodes
+#   become: true
+#   gather_facts: true
+
+- name: Install Docker dan Dependencies pada Semua Docker Hosts
+  hosts: docker_hosts
   become: true
   gather_facts: true
 
   tasks:
+    # ==========================================
+    # Cleanup Duplicate Docker Repository
+    # ==========================================
+    - name: Disable duplicate Docker repository without signed-by
+      lineinfile:
+        path: /etc/apt/sources.list.d/download_docker_com_linux_ubuntu.list
+        regexp: '^deb \[arch=amd64\] https://download\.docker\.com/linux/ubuntu {{ ansible_distribution_release }} stable$'
+        line: '# [LAMA - dinonaktifkan otomatis oleh Ansible] deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable'
+        state: present
+        backrefs: false
+      failed_when: false
+      tags:
+        - docker
+        - docker-repo
+        - cleanup
+        
     # ==========================================
     # Update APT Cache
     # ==========================================
@@ -95,9 +117,19 @@
     # ==========================================
     # Docker User Configuration
     # ==========================================
-    - name: Add ubuntu user to docker group
+    # [LAMA - dinonaktifkan] VM Azure dibuat dengan user azureuser, bukan ubuntu.
+    # - name: Add ubuntu user to docker group
+    #   user:
+    #     name: ubuntu
+    #     groups: docker
+    #     append: yes
+    #   tags:
+    #     - docker
+    #     - docker-user
+
+    - name: Add Ansible SSH user to docker group
       user:
-        name: ubuntu
+        name: "{{ ansible_user }}"
         groups: docker
         append: yes
       tags:

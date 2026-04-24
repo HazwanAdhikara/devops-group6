@@ -15,7 +15,11 @@ alerting:
   alertmanagers:
     - static_configs:
         - targets:
-            - localhost:9093     # Alertmanager runs on port 9093
+            # [LAMA - dinonaktifkan] localhost dari container Prometheus menunjuk ke container Prometheus sendiri, bukan Alertmanager.
+            # - localhost:9093     # Alertmanager runs on port 9093
+
+            # [BARU] Alertmanager berjalan sebagai service/container Docker Compose bernama alertmanager.
+            - alertmanager:9093
 
 # Load rules once and periodically evaluate them
 rule_files:
@@ -47,6 +51,15 @@ scrape_configs:
   - job_name: 'node_exporter'
     static_configs:
       - targets: ['10.0.1.4:9100']
+        labels:
+          vm_role: 'application'
+          vm_name: 'vm-application'
+
+      - targets: ['10.0.1.5:9100']
+        labels:
+          vm_role: 'monitoring'
+          vm_name: 'vm-monitoring'
+          
     scrape_interval: 15s
     scrape_timeout: 5s
     relabel_configs:
@@ -58,6 +71,10 @@ scrape_configs:
   # Job 4: Alertmanager (optional - for alertmanager metrics)
   - job_name: 'alertmanager'
     static_configs:
-      - targets: ['localhost:9093']
+    # [LAMA - dinonaktifkan] localhost dari container Prometheus menunjuk ke container Prometheus sendiri, bukan Alertmanager.
+    # - targets: ['localhost:9093']
+
+    # [BARU] Target Alertmanager melalui nama service Docker Compose.
+    - targets: ['alertmanager:9093']
     scrape_interval: 15s
     scrape_timeout: 5s
