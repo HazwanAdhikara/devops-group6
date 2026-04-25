@@ -8,22 +8,22 @@
   hosts: monitoring_nodes
   become: yes
   gather_facts: yes
-  
+
   # Variables specific to monitoring
   vars:
-    app_node_ip: "10.0.1.4"
+    app_node_ip: "{{ hostvars[groups['app_nodes'][0]].app_private_ip | default(hostvars[groups['app_nodes'][0]].ansible_host) }}"
     app_port: 3000
     node_exporter_port: 9100
     prometheus_port: 9090
     alertmanager_port: 9093
-    
+
     docker_compose_dir: "/opt/monitoring"
     prometheus_config_dir: "/opt/monitoring/prometheus"
     alertmanager_config_dir: "/opt/monitoring/alertmanager"
-    
+
     prometheus_image: "prom/prometheus:latest"
     alertmanager_image: "prom/alertmanager:latest"
-  
+
   pre_tasks:
     - name: Update apt cache
       apt:
@@ -35,7 +35,7 @@
       file:
         path: "{{ item }}"
         state: directory
-        mode: '0755'
+        mode: "0755"
         owner: root
         group: root
       loop:
@@ -114,21 +114,21 @@
       block:
         - name: Copy prometheus.yml to monitoring node
           copy:
-            src: prometheus.yml
+            src: ../files/prometheus.yml
             dest: "{{ prometheus_config_dir }}/prometheus.yml"
             owner: root
             group: root
-            mode: '0644'
+            mode: "0644"
             backup: yes
           notify: restart prometheus container
 
         - name: Copy alerting-rules.yml to monitoring node
           copy:
-            src: alerting-rules.yml
+            src: ../files/alerting-rules.yml
             dest: "{{ prometheus_config_dir }}/alerting-rules.yml"
             owner: root
             group: root
-            mode: '0644'
+            mode: "0644"
             backup: yes
           notify: restart prometheus container
 
@@ -153,11 +153,11 @@
       block:
         - name: Copy alertmanager.yml to monitoring node
           copy:
-            src: alertmanager.yml
+            src: ../files/alertmanager.yml
             dest: "{{ alertmanager_config_dir }}/alertmanager.yml"
             owner: root
             group: root
-            mode: '0644'
+            mode: "0644"
             backup: yes
           notify: restart alertmanager container
 
@@ -165,7 +165,7 @@
           file:
             path: "{{ alertmanager_config_dir }}/data"
             state: directory
-            mode: '0755'
+            mode: "0755"
             owner: nobody
             group: nogroup
 
@@ -270,7 +270,7 @@
             dest: "{{ docker_compose_dir }}/docker-compose.yml"
             owner: root
             group: root
-            mode: '0644'
+            mode: "0644"
 
       tags:
         - docker-compose
@@ -444,7 +444,6 @@
         dest: "{{ docker_compose_dir }}/DEPLOYMENT_SUMMARY.md"
         owner: root
         group: root
-        mode: '0644'
-
+        mode: "0644"
 # Monitoring Setup Complete
 # All services should be running and ready for production use

@@ -101,6 +101,16 @@ k6 run --out json=results.json load-test.js
 
 Note: The script tests 1000 VUs for 5 minutes and tracks custom latency to trigger monitoring alerts.
 
+### Query for Prometheus
+
+```
+rate(http_requests_total[1m])
+```
+
+```
+histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))
+```
+
 ## Repository Layout
 
 ```text

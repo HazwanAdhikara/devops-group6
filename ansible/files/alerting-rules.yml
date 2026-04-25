@@ -122,7 +122,7 @@ groups:
       # Alert 9: High Error Rate
       - alert: HighErrorRate
         expr: |
-          (sum(rate(http_requests_total{status=~"5.."}[5m])) by (instance) / sum(rate(http_requests_total[5m])) by (instance)) * 100 > 5
+          (sum(rate(http_requests_total{status_code=~"5.."}[5m])) by (instance) / sum(rate(http_requests_total[5m])) by (instance)) * 100 > 5
         for: 5m
         labels:
           severity: warning
@@ -135,7 +135,7 @@ groups:
       # Alert 10: Critical Error Rate
       - alert: CriticalErrorRate
         expr: |
-          (sum(rate(http_requests_total{status=~"5.."}[5m])) by (instance) / sum(rate(http_requests_total[5m])) by (instance)) * 100 > 10
+          (sum(rate(http_requests_total{status_code=~"5.."}[5m])) by (instance) / sum(rate(http_requests_total[5m])) by (instance)) * 100 > 10
         for: 2m
         labels:
           severity: critical

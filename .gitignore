@@ -1,0 +1,10 @@
+.DS_Store
+
+# Terraform local artifacts
+terraform/.terraform/
+*.tfstate
+*.tfstate.*
+terraform/terraform.tfvars
+
+# Local logs and temp outputs
+ansible/logs/
