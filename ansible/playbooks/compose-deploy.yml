@@ -1,8 +1,3 @@
-# ==========================================
-# Managed by: Person 4 - Ansible Specialist
-# Description: Deployment aplikasi menggunakan Docker Compose
-# ==========================================
-
 ---
 - name: Deploy Application via Docker Compose
   hosts: app_nodes

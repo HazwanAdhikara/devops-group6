@@ -1,14 +1,4 @@
-# ==========================================
-# Managed by: Person 4 - Ansible Specialist
-# Description: Install Docker dan dependencies pada app node
-# ==========================================
-
 ---
-# [LAMA - dinonaktifkan] Play lama hanya menargetkan app_nodes, sehingga Docker tidak terinstall di monitoring node.
-# - name: Install Docker dan Dependencies pada App Nodes
-#   hosts: app_nodes
-#   become: true
-#   gather_facts: true
 
 - name: Install Docker dan Dependencies pada Semua Docker Hosts
   hosts: docker_hosts
